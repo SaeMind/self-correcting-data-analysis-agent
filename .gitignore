@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+outputs/agent.log
+outputs/agent_runtime.db
+outputs/analysis_*/
+!outputs/.gitkeep
+.DS_Store
+venv/
+.venv/

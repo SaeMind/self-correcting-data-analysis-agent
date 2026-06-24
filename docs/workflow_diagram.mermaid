@@ -1,0 +1,37 @@
+```mermaid
+flowchart LR
+    A([CLI Entry\nargs: dataset path]) --> B[DataLoader\nload_dataset]
+    B --> C[SchemaInspector\nschema_inspect tool]
+    C --> D{Schema\nValid?}
+    D -- NO --> E([Abort: Invalid Dataset])
+    D -- YES --> F[HypothesisGenerator\nClaude reasoning pass]
+    F --> G[Rank Hypotheses\nclinical + data + simplicity]
+    G --> H[Select Next Hypothesis]
+    H --> I[QueryPlanner\nClaude tool_use]
+    I --> J[SandboxExecutor\nexecute_query tool\nSQLite in-process]
+    J --> K{Execution\nError?}
+    K -- YES --> L[ErrorCorrector\nClaude self-correction]
+    K -- NO --> M[ResultValidator\nvalidate_results tool]
+    M --> N{Validation\nPassed?}
+    N -- YES --> O[Analysis Complete\nappend to RunState]
+    N -- NO --> L
+    L --> P{Retry\nCount < 3?}
+    P -- YES --> Q[Increment Retry\nLog Error]
+    Q --> I
+    P -- NO --> R[Abort Hypothesis\nLog Failure Chain]
+    R --> S{More\nHypotheses?}
+    O --> S
+    S -- YES --> H
+    S -- NO --> T{Min 3\nSuccessful?}
+    T -- NO --> U([Abort Run\nInsufficient Analyses])
+    T -- YES --> V[ReportWriter\nMarkdown + JSON + Figures]
+    V --> W[OutputSaver\nsave_report tool\nPII hashing]
+    W --> X([Run Complete\n/outputs/analysis_timestamp/])
+
+    style A fill:#1e3a5f,color:#fff
+    style X fill:#1e3a5f,color:#fff
+    style E fill:#7f1d1d,color:#fff
+    style U fill:#7f1d1d,color:#fff
+    style L fill:#78350f,color:#fff
+    style O fill:#14532d,color:#fff
+```

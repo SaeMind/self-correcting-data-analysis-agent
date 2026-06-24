@@ -1,0 +1,270 @@
+{
+  "schema_version": "1.0.0",
+  "agent": "self-correcting-clinical-data-analyst",
+  "model": "claude-sonnet-4-6",
+  "tools": [
+    {
+      "name": "schema_inspect",
+      "description": "Inspect a healthcare dataset CSV and return a full schema report including column types, null rates, cardinalities, and numeric ranges. Hashes PII columns (member_id, provider_id) before returning. Flags columns with >80% nulls as unreliable.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "dataset_path": {
+            "type": "string",
+            "description": "Absolute path to the CSV dataset file."
+          }
+        },
+        "required": ["dataset_path"]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "row_count": {
+            "type": "integer",
+            "description": "Total number of rows in the dataset."
+          },
+          "columns": {
+            "type": "array",
+            "description": "Per-column metadata array.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "dtype": { "type": "string", "enum": ["numeric", "categorical", "date", "boolean", "unknown"] },
+                "null_pct": { "type": "number", "minimum": 0, "maximum": 1 },
+                "cardinality": { "type": "integer" },
+                "min": { "type": ["number", "null"] },
+                "max": { "type": ["number", "null"] },
+                "mean": { "type": ["number", "null"] },
+                "std": { "type": ["number", "null"] },
+                "is_unreliable": { "type": "boolean" },
+                "sample_values": { "type": "array", "maxItems": 3 }
+              }
+            }
+          },
+          "unreliable_columns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Column names with null_pct > 0.80."
+          },
+          "pii_columns_hashed": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Column names that were SHA-256 hashed during inspection."
+          }
+        },
+        "required": ["row_count", "columns", "unreliable_columns", "pii_columns_hashed"]
+      }
+    },
+    {
+      "name": "execute_query",
+      "description": "Execute a read-only SQL SELECT query against the loaded dataset in a sandboxed SQLite environment. Enforces safety guardrails: no destructive operations, 30-second timeout, 1,000,000-row cap. Returns rows, row count, execution time, and any error message.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "sql": {
+            "type": "string",
+            "description": "A valid SQL SELECT statement. Must not contain DELETE, DROP, INSERT, UPDATE, TRUNCATE, or ALTER."
+          },
+          "db_path": {
+            "type": "string",
+            "description": "Path to the SQLite database file created from the loaded CSV."
+          },
+          "timeout_sec": {
+            "type": "integer",
+            "description": "Maximum query execution time in seconds.",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 60
+          }
+        },
+        "required": ["sql", "db_path"]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "description": "Query result rows as list of dicts. Capped at 1,000,000 rows.",
+            "items": { "type": "object" }
+          },
+          "row_count": {
+            "type": "integer",
+            "description": "Number of rows returned."
+          },
+          "execution_time_ms": {
+            "type": "number",
+            "description": "Wall-clock execution time in milliseconds."
+          },
+          "columns_returned": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Column names in the result set."
+          },
+          "error": {
+            "type": ["string", "null"],
+            "description": "Error message if execution failed; null on success."
+          },
+          "safety_violation": {
+            "type": ["string", "null"],
+            "description": "Set if a prohibited SQL keyword was detected before execution."
+          }
+        },
+        "required": ["rows", "row_count", "execution_time_ms", "columns_returned", "error"]
+      }
+    },
+    {
+      "name": "validate_results",
+      "description": "Run statistical and data-quality validation on a query result against its associated hypothesis. Checks for null rates, impossible clinical values, outlier rates, and statistical significance. Returns a structured ValidationReport with pass/fail status, failure reason, warnings, and statistical test results.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query_result": {
+            "type": "object",
+            "description": "The QueryResult object returned by execute_query.",
+            "properties": {
+              "rows": { "type": "array" },
+              "row_count": { "type": "integer" },
+              "columns_returned": { "type": "array" }
+            }
+          },
+          "hypothesis": {
+            "type": "object",
+            "description": "The Hypothesis object being tested.",
+            "properties": {
+              "id": { "type": "string" },
+              "statement": { "type": "string" },
+              "test_type": {
+                "type": "string",
+                "enum": ["t-test", "chi-square", "regression", "descriptive"]
+              },
+              "columns_required": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "required": ["query_result", "hypothesis"]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "passed": {
+            "type": "boolean",
+            "description": "True if all hard-fail checks pass."
+          },
+          "failure_reason": {
+            "type": ["string", "null"],
+            "description": "Machine-readable failure code if passed=false. Examples: no_rows, high_nulls:amount, invalid_age, negative_cost."
+          },
+          "warnings": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Non-fatal data quality observations (outlier rate, diagnosis null rate, etc.)."
+          },
+          "statistical_result": {
+            "type": ["object", "null"],
+            "description": "Statistical test output.",
+            "properties": {
+              "test_name": { "type": "string" },
+              "statistic": { "type": "number" },
+              "p_value": { "type": ["number", "null"] },
+              "effect_size": { "type": ["number", "null"] },
+              "significant": { "type": "boolean" },
+              "direction": { "type": ["string", "null"] }
+            }
+          },
+          "checks_run": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Ordered list of check names that were evaluated."
+          }
+        },
+        "required": ["passed", "failure_reason", "warnings", "statistical_result", "checks_run"]
+      }
+    },
+    {
+      "name": "save_report",
+      "description": "Write the final analysis report and run metadata to disk. Hashes all remaining PII identifiers before output. Generates one Markdown section per successful analysis and one JSON metadata file covering the full run including error chains, retry counts, and execution lineage.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "description": "Unique identifier for this agent run."
+          },
+          "successful_analyses": {
+            "type": "array",
+            "description": "List of completed Analysis objects.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "hypothesis_id": { "type": "string" },
+                "statement": { "type": "string" },
+                "final_sql": { "type": "string" },
+                "row_count": { "type": "integer" },
+                "statistical_result": { "type": "object" },
+                "warnings": { "type": "array" },
+                "retry_count": { "type": "integer" },
+                "figure_paths": { "type": "array" }
+              }
+            }
+          },
+          "aborted_hypotheses": {
+            "type": "array",
+            "description": "Hypothesis IDs that exhausted max retries.",
+            "items": { "type": "string" }
+          },
+          "error_log": {
+            "type": "array",
+            "description": "Full error chain across all hypothesis attempts.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "hypothesis_id": { "type": "string" },
+                "attempt": { "type": "integer" },
+                "reason": { "type": "string" },
+                "timestamp": { "type": "string", "format": "date-time" }
+              }
+            }
+          },
+          "output_dir": {
+            "type": "string",
+            "description": "Target directory path for all output artifacts."
+          }
+        },
+        "required": ["run_id", "successful_analyses", "aborted_hypotheses", "error_log", "output_dir"]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "report_path": {
+            "type": "string",
+            "description": "Absolute path to the generated Markdown report."
+          },
+          "metadata_path": {
+            "type": "string",
+            "description": "Absolute path to the JSON run metadata file."
+          },
+          "figures_dir": {
+            "type": "string",
+            "description": "Absolute path to the figures output directory."
+          },
+          "success": {
+            "type": "boolean",
+            "description": "True if all files were written without error."
+          }
+        },
+        "required": ["report_path", "metadata_path", "figures_dir", "success"]
+      }
+    }
+  ],
+  "safety_constraints": {
+    "prohibited_sql_keywords": ["DELETE", "DROP", "INSERT", "UPDATE", "TRUNCATE", "ALTER"],
+    "query_timeout_sec": 30,
+    "max_rows_per_query": 1000000,
+    "max_retries_per_hypothesis": 3,
+    "pii_fields_to_hash": ["member_id", "provider_id"],
+    "hash_algorithm": "SHA-256",
+    "network_access": false,
+    "filesystem_write_scope": "/outputs/"
+  }
+}
