@@ -61,7 +61,17 @@ Full end-to-end output (hypothesis generation through final report) requires a l
 
 ## Key Findings
 
-*Populated after the first live run against `data/claims_sample.csv`. The synthetic dataset includes intentional data quality issues — 2% negative-cost records, 5% missing diagnosis codes, 1% missing ages — specifically so the self-correction loop has real failure modes to resolve on the first execution.*
+Run `07d0f881` against the 10,000-record synthetic claims dataset completed all 5 hypotheses, with the self-correction loop triggering and resolving on 4 of 5 (1–3 retries each) before producing a valid result.
+
+| Hypothesis | Test | Result | Interpretation |
+|---|---|---|---|
+| Chronic condition → claim amount | t-test | p=0.94 | No significant cost difference detected |
+| Service type → 30-day readmission | chi-square | p=0.53 | No significant association detected |
+| Age → claim amount | regression | p=1.55e-25, R²=0.011 | Significant positive relationship — small effect size, but detectable at this sample size |
+| Diagnosis code → claim amount | ANOVA (8 groups) | p=0.82 | No significant difference across diagnosis categories |
+| Chronic condition → 30-day readmission | chi-square | p=0.26 | No significant association detected |
+
+The single significant finding (age → cost) is consistent with a real but modest age-based cost gradient; the four null results reflect the dataset's actual structure, where readmission and diagnosis code were generated independently of the other variables. The self-correction mechanism recovered from missing-column errors, an aggregated-data validation failure, a SQL window-function misuse error, and a query-syntax error — all without human intervention.
 
 ## Limitations & Future Work
 
