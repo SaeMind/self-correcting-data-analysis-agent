@@ -1,0 +1,6 @@
+run_id,hypothesis_id,statement,outcome,test_name,statistic,p_value,significant,row_count,retry_count,self_corrected,warnings
+ec1d5144,H1,Members with a chronic condition (chronic_condition_flag=1) have significantly higher claim amounts than those without a chronic condition (chronic_condition_flag=0).,passed,t-test,0.07218414699354543,0.9424568345674187,False,9800,2,yes,zscore_gt_5.0_count:52
+ec1d5144,H3,The rate of 30-day readmission differs significantly across the 8 diagnosis code categories.,passed,chi-square,3.7085938691925535,0.812663013624811,False,9307,2,yes,
+ec1d5144,H5,Members with a chronic condition have a significantly higher 30-day readmission rate than those without a chronic condition.,passed,chi-square,1.2916101249387986,0.2557514370662404,False,10000,1,yes,
+ec1d5144,H2,,aborted,,,,,0,,,
+ec1d5144,H4,,aborted,,,,,0,,,

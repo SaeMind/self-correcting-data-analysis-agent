@@ -43,12 +43,32 @@ run, or added — not asserted from the prior README.
   tree and git index, and added `.env.save` to `.gitignore`.
 - Created a local, gitignored `.env` from `.env.example` for the live run.
 
-## Pending (require external resources)
+## Live run — completed (run `ec1d5144`, Claude Sonnet 4.6)
 
-- **Live end-to-end run** (`src/agent.py`) — requires a real `ANTHROPIC_API_KEY`.
-  Real hypothesis pass count, self-correction trigger count, and failure-mode
-  tags will be recorded here and in the README once the run completes; the prior
-  README figures (run `07d0f881`: 5/5 hypotheses, self-correction on 4/5) will be
-  reconciled against the fresh run rather than reused.
-- **Tableau Public publish** — the workbook and CSVs are produced locally; the
-  public URL will be added to the README after publishing.
+Ran `python3 -m src.agent --dataset data/claims_sample.csv` end-to-end against a
+live API. Real results:
+
+- **3 of 5 hypotheses passed** (H1, H3, H5); **2 aborted** (H2, H4) after
+  exhausting the 3-retry budget rather than reporting an invalid query.
+- **Self-correction triggered on all 5 hypotheses** — 13 correction attempts in
+  total — and resolved 3.
+- **Failure modes (13 triggers):** `missing_column` ×4, `negative_cost` ×4,
+  `misuse of window function AVG()` (execution error) ×4, `aggregated_data_detected` ×1.
+- **Manual query inspection:** all three passing queries were checked by hand and
+  confirmed correct (raw per-observation rows, required columns present,
+  appropriate statistical test) — not merely non-erroring.
+
+**Reconciliation with prior figures:** the prior README reported run `07d0f881`
+as 5/5 hypotheses with self-correction on 4/5. This fresh run produced 3/5 with
+2 aborts. The difference is live-model variance: in `ec1d5144` the model
+repeatedly emitted a SQLite-invalid `AVG()` window function on H2/H4 that it
+could not fix within the retry budget. Both runs demonstrate the validator and
+bounded-retry fail-safe working correctly — recovering when a fix is reachable,
+aborting cleanly when it is not. The README now reports both runs rather than
+overwriting the old numbers.
+
+## Pending (require the user's account)
+
+- **Tableau Public publish** — the workbook data (`tableau/*.csv`) is produced
+  from run `ec1d5144`; the public URL will be added to the README after the user
+  publishes the dashboard following `docs/tableau_dashboard.md`.
