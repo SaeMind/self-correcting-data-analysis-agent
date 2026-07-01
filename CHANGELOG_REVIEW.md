@@ -67,8 +67,9 @@ bounded-retry fail-safe working correctly — recovering when a fix is reachable
 aborting cleanly when it is not. The README now reports both runs rather than
 overwriting the old numbers.
 
-## Pending (require the user's account)
+## Tableau Public — published
 
-- **Tableau Public publish** — the workbook data (`tableau/*.csv`) is produced
-  from run `ec1d5144`; the public URL will be added to the README after the user
-  publishes the dashboard following `docs/tableau_dashboard.md`.
+- Dashboard published from the run `ec1d5144` CSVs (`tableau/*.csv`) and linked in
+  the README:
+  https://public.tableau.com/views/Self-CorrectingDataAnalysisAgent/Self-CorrectingDataAnalysis
+  (canonical URL verified reachable, HTTP 200).

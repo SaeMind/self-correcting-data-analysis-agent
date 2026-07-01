@@ -96,7 +96,7 @@ An earlier run completed all 5 hypotheses (**5/5**), with self-correction resolv
 
 A Tableau Public dashboard visualizes the run metadata directly from the exported CSVs (`tableau/`, produced by `scripts/export_results.py`): (a) hypothesis pass/fail breakdown, (b) self-correction triggers by failure mode, and (c) retries and statistical test per hypothesis.
 
-**Dashboard link:** _to be added after publishing_ — build steps in [`docs/tableau_dashboard.md`](docs/tableau_dashboard.md).
+**Dashboard link:** **[View on Tableau Public →](https://public.tableau.com/views/Self-CorrectingDataAnalysisAgent/Self-CorrectingDataAnalysis)** — build steps in [`docs/tableau_dashboard.md`](docs/tableau_dashboard.md).
 
 > Every figure in the dashboard comes from `outputs/analysis_<run_id>/run_metadata.json`; no values are hand-entered.
 
