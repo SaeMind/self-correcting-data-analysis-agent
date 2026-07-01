@@ -57,3 +57,85 @@ This writes:
 > **Integrity note:** publish only after a real `src/agent.py` run has produced the
 > CSVs. Do not populate the workbook with placeholder or hand-typed numbers — the
 > whole point of the dashboard is that it renders the actual run metadata.
+
+---
+
+## Beginner walkthrough (no prior Tableau experience)
+
+The steps above assume some familiarity with Tableau. This section is the fully
+click-by-click version. The data is already generated — you only build visuals
+and publish.
+
+### Where the files are
+```
+tableau/
+├── hypothesis_outcomes.csv      (5 rows — one per hypothesis)
+├── correction_triggers.csv      (13 rows — one per retry)
+└── failure_mode_summary.csv     (4 rows — one per failure mode)
+```
+
+### Step 0 — One-time setup
+1. Download **Tableau Public** — free, and different from the paid "Tableau
+   Desktop": https://www.tableau.com/products/public/download → install.
+2. Create a free **Tableau Public account** at https://public.tableau.com. You
+   need it to publish and get a shareable link.
+
+### Step 1 — Load the data
+1. Open Tableau Public. Left **Connect** pane → **Text file** →
+   `tableau/hypothesis_outcomes.csv`.
+2. Click the **Sheet 1** tab at the bottom to start charting.
+3. To add the other two files later: menu **Data → New Data Source → Text file**
+   → pick `correction_triggers.csv`, repeat for `failure_mode_summary.csv`.
+   Each sheet below uses only **one** source — select it in the left **Data**
+   pane before building that sheet.
+
+> Tableau files text columns under **Dimensions** (blue) and numbers under
+> **Measures** (green). That's expected.
+
+### Step 2 — Sheet A: hypothesis pass/fail  *(source: `hypothesis_outcomes`)*
+1. Drag **Outcome** → **Columns** shelf.
+2. Drag **Hypothesis Id** → **Rows** → right-click the pill → **Measure → Count**
+   (bars: passed = 3, aborted = 2).
+3. Drag **Self Corrected** → the **Color** box on the **Marks** card.
+4. Double-click the sheet-tab name → rename to **Hypothesis outcomes**.
+
+### Step 3 — Sheet B: triggers by failure mode  *(source: `failure_mode_summary`)*
+1. New sheet (the "New Worksheet" icon on the bottom bar). Select
+   `failure_mode_summary` in the left Data pane first.
+2. Drag **Failure Mode** → **Rows**.
+3. Drag **Trigger Count** → **Columns** (reads as SUM — fine; one row per mode).
+4. Drag **Failure Category** → **Color** on the Marks card.
+5. Right-click the **Failure Mode** axis → **Sort → Descending** by Trigger Count.
+6. Rename → **Self-correction triggers by failure mode**.
+
+### Step 4 — Sheet C: retries per hypothesis  *(source: `hypothesis_outcomes`)*
+1. New sheet.
+2. Drag **Hypothesis Id** → **Columns**.
+3. Drag **Retry Count** → **Rows** → right-click pill → **Measure → Sum**.
+4. Drag **Test Name** → **Color**.
+5. Drag **P Value** → the **Tooltip** box (so hover shows the stat result).
+6. Rename → **Retries and test per hypothesis**.
+
+### Step 5 — Assemble the dashboard
+1. Bottom bar → **New Dashboard** icon (grid icon).
+2. Drag the three sheets from the left **Sheets** list onto the canvas.
+3. Double-click near the top to add a **Text** title, e.g.
+   `Self-Correcting Data Analysis Agent — Run ec1d5144`.
+
+### Step 6 — Publish and get the link
+1. Menu **File → Save to Tableau Public As…**
+2. Sign in with your Tableau Public account.
+3. Name it → **Save**. It uploads and opens in the browser; the page URL (or the
+   **Share** button) is your public link.
+
+### Common snags
+- *One giant bar / wrong number* → the count/sum aggregation is off: right-click
+  the measure pill → **Measure → Count** (outcomes) or **Sum** (retries/triggers).
+- *Fields from the wrong file* → select the correct source in the top-left **Data**
+  pane before building the sheet.
+- *No "Save to Tableau Public" option* → you opened paid Tableau Desktop, not
+  **Tableau Public**; install the Public version.
+
+### Published dashboard
+This project's live dashboard:
+https://public.tableau.com/views/Self-CorrectingDataAnalysisAgent/Self-CorrectingDataAnalysis
