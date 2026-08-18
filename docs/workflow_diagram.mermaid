@@ -13,7 +13,7 @@ flowchart LR
     K -- YES --> L[ErrorCorrector\nClaude self-correction]
     K -- NO --> M[ResultValidator\nvalidate_results tool]
     M --> N{Validation\nPassed?}
-    N -- YES --> O[Analysis Complete\nappend to RunState]
+    N -- YES --> O[Analysis Complete\nGenerateChart + append to RunState]
     N -- NO --> L
     L --> P{Retry\nCount < 3?}
     P -- YES --> Q[Increment Retry\nLog Error]
@@ -24,7 +24,8 @@ flowchart LR
     S -- YES --> H
     S -- NO --> T{Min 3\nSuccessful?}
     T -- NO --> U([Abort Run\nInsufficient Analyses])
-    T -- YES --> V[ReportWriter\nMarkdown + JSON + Figures]
+    T -- YES --> MC[Multiple-Comparisons Correction\nBenjamini-Hochberg FDR]
+    MC --> V[ReportWriter\nMarkdown + JSON + Figures]
     V --> W[OutputSaver\nsave_report tool\nPII hashing]
     W --> X([Run Complete\n/outputs/analysis_timestamp/])
 
@@ -34,4 +35,5 @@ flowchart LR
     style U fill:#7f1d1d,color:#fff
     style L fill:#78350f,color:#fff
     style O fill:#14532d,color:#fff
+    style MC fill:#3730a3,color:#fff
 ```

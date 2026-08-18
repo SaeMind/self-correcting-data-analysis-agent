@@ -4,7 +4,7 @@
 **Domain:** Clinical Data Science / Healthcare Analytics  
 **Version:** 1.0.0  
 **Author:** Andrew Lee  
-**Stack:** Python 3.11 · Claude API (claude-sonnet-4-6) · SQLite · Pandas · Scipy
+**Stack:** Python 3.11 · Claude API (claude-sonnet-5, adaptive thinking) · SQLite · Pandas · Scipy · Matplotlib
 
 ---
 
@@ -111,6 +111,8 @@ Clinical data science teams spend substantial time writing exploratory SQL queri
 
 **Claude writes parameterized SQL.** Parameters are injected via Python's `sqlite3` parameterized query interface — no f-string interpolation.
 
+**Raw row-level output only.** The system prompt (both the initial planner and the retry corrector) explicitly forbids `GROUP BY`, aggregate functions, and window functions — including aggregate-as-window patterns like `AVG(x) OVER (...)`. Stage 4's statistical tests are computed from raw rows by the validation layer; SQL-side aggregation is rejected at Stage 4, not silently accepted.
+
 **QueryResult fields:**
 - `rows`: list of dicts
 - `row_count`: int
@@ -168,6 +170,16 @@ Clinical data science teams spend substantial time writing exploratory SQL queri
 
 ---
 
+### Stage 5.5 — Multiple-Comparisons Correction
+
+**Trigger:** All hypotheses in the run have been evaluated (passed or aborted).
+
+**Tool:** `apply_multiple_comparison_correction(analyses: list[Analysis], alpha: float) → list[Analysis]`
+
+Testing several hypotheses against one dataset at an uncorrected per-test α=0.05 inflates the run-level false-positive rate. This stage applies Benjamini-Hochberg (FDR) correction across every successful analysis's p-value, adding `p_value_adjusted` and `significant_adjusted` fields. Analyses without a numeric p-value (e.g. descriptive tests) are left untouched. Applied once, after the main hypothesis loop and before report generation — not per-hypothesis.
+
+---
+
 ### Stage 6 — Report Generation
 
 **Trigger:** All hypotheses processed (passed or aborted).
@@ -220,7 +232,7 @@ State is serialized to `/outputs/state_<run_id>.json` after each stage for crash
 | Max retries | Agent state counter, hard-stopped at 3 |
 | Medical safety flag | Diagnosis null rate check in validator |
 | No external network calls | Sandbox environment, no requests/httpx |
-| Model version pinned | Hardcoded to `claude-sonnet-4-6` in config |
+| Model version pinned | Configured via `AGENT_MODEL` env var, defaults to `claude-sonnet-5` in config |
 
 ---
 
