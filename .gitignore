@@ -6,6 +6,7 @@ __pycache__/
 outputs/agent.log
 outputs/agent_runtime.db
 outputs/analysis_*/
+outputs/test_figures/
 !outputs/.gitkeep
 .DS_Store
 venv/

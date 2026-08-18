@@ -176,6 +176,64 @@ def validate_results(
     )
 
 
+def apply_multiple_comparison_correction(
+    analyses: list[dict], alpha: float = config.SIGNIFICANCE_ALPHA
+) -> list[dict]:
+    """
+    Apply Benjamini-Hochberg (FDR) correction across every successful
+    analysis's p-value in a single run.
+
+    Each run tests multiple hypotheses against the same dataset; evaluating
+    each at the per-test alpha=0.05 inflates the run-level false-positive
+    rate (5 independent tests at alpha=0.05 give ~23% chance of at least one
+    false positive even if every null hypothesis is true). Benjamini-Hochberg
+    controls the false discovery rate across the batch and is the standard
+    choice for exploratory multi-hypothesis generation — the same setting as
+    the biomedical hypothesis-generation literature this project cites
+    (see docs/literature_review.md).
+
+    Adds `p_value_adjusted` and `significant_adjusted` to each analysis's
+    `statistical_result` dict in place. Analyses without a numeric p-value
+    (e.g. descriptive tests, or tests that couldn't fit) are left untouched.
+    Mutates and returns the same list for convenience.
+
+    Args:
+        analyses: List of analysis dicts, each with a `statistical_result`
+            dict containing a `p_value` key (may be None).
+        alpha: False discovery rate threshold (default: config.SIGNIFICANCE_ALPHA).
+
+    Returns:
+        The same list, with `p_value_adjusted` / `significant_adjusted` added
+        to each analysis's statistical_result.
+    """
+    indexed = [
+        (i, a["statistical_result"]["p_value"])
+        for i, a in enumerate(analyses)
+        if a.get("statistical_result") and a["statistical_result"].get("p_value") is not None
+    ]
+    if not indexed:
+        return analyses
+
+    m = len(indexed)
+    sorted_indexed = sorted(indexed, key=lambda t: t[1])
+
+    # Benjamini-Hochberg adjusted p-value: for rank i (1-indexed, ascending
+    # p-value), q(i) = p(i) * m / i, then enforce monotonicity by taking the
+    # cumulative minimum from the largest rank down to the smallest.
+    adjusted = [0.0] * m
+    for rank, (_, p_value) in enumerate(sorted_indexed, start=1):
+        adjusted[rank - 1] = min(p_value * m / rank, 1.0)
+    for i in range(m - 2, -1, -1):
+        adjusted[i] = min(adjusted[i], adjusted[i + 1])
+
+    for (analysis_idx, _), adj_p in zip(sorted_indexed, adjusted):
+        stat = analyses[analysis_idx]["statistical_result"]
+        stat["p_value_adjusted"] = adj_p
+        stat["significant_adjusted"] = bool(adj_p < alpha)
+
+    return analyses
+
+
 def _iqr_outlier_rate(series: pd.Series) -> float:
     """Return the fraction of values outside 1.5*IQR of the column."""
     numeric = pd.to_numeric(series, errors="coerce").dropna()

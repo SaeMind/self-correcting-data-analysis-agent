@@ -29,10 +29,14 @@ DEFAULT_DATASET_PATH = DATA_DIR / "claims_sample.csv"
 # ──────────────────────────────────────────────
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL_NAME = os.getenv("AGENT_MODEL", "claude-sonnet-4-6")
-MAX_TOKENS_HYPOTHESIS = 2000
-MAX_TOKENS_QUERY = 1000
-MAX_TOKENS_CORRECTION = 1000
+MODEL_NAME = os.getenv("AGENT_MODEL", "claude-sonnet-5")
+# claude-sonnet-5 runs adaptive thinking by default; thinking tokens count
+# against max_tokens, so these budgets carry headroom beyond the expected
+# JSON/SQL output length (a truncated thinking block otherwise leaves no
+# room for the actual response and the call silently returns nothing usable).
+MAX_TOKENS_HYPOTHESIS = 8000
+MAX_TOKENS_QUERY = 4000
+MAX_TOKENS_CORRECTION = 4000
 
 # ──────────────────────────────────────────────
 # AGENT BEHAVIOR CONSTANTS
