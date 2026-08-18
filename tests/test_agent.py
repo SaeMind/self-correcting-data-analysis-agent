@@ -1,10 +1,11 @@
 """
 test_agent.py — Tests for the deterministic tool layer (no live API calls).
 
-Covers schema_inspect, build_sqlite_db, execute_query, and validate_results
-against the generated synthetic dataset. The hypothesis generation, query
-planning, and error correction stages require a live ANTHROPIC_API_KEY and
-are intentionally excluded from this suite — they are exercised by running
+Covers schema_inspect, build_sqlite_db, execute_query, validate_results,
+generate_chart, apply_multiple_comparison_correction, and save_report against
+the generated synthetic dataset. The hypothesis generation, query planning,
+and error correction stages require a live ANTHROPIC_API_KEY and are
+intentionally excluded from this suite — they are exercised by running
 src/agent.py directly.
 
 Author: Andrew Lee
@@ -101,6 +102,57 @@ def test_ttest_between_service_types():
           f"significant={stat['significant']}, direction={stat['direction']}")
 
 
+def test_generate_chart_writes_png():
+    db_path = tools.build_sqlite_db(DATASET_PATH)
+    result = tools.execute_query(
+        "SELECT service_type, amount FROM claims "
+        "WHERE service_type IN ('Inpatient', 'Primary Care') AND amount >= 0",
+        db_path,
+    )
+    report = validator.validate_results(
+        rows=result.rows,
+        columns_returned=result.columns_returned,
+        test_type="t-test",
+        group_column="service_type",
+        value_column="amount",
+    )
+    figures_dir = config.OUTPUTS_DIR / "test_figures"
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    filename = tools.generate_chart(
+        hypothesis_id="H_CHART_TEST",
+        rows=result.rows,
+        test_type="t-test",
+        group_column="service_type",
+        value_column="amount",
+        statistical_result=report.statistical_result,
+        figures_dir=figures_dir,
+    )
+    assert filename is not None
+    chart_path = figures_dir / filename
+    assert chart_path.exists()
+    assert chart_path.stat().st_size > 0
+    print(f"PASS: generate_chart — wrote {chart_path} ({chart_path.stat().st_size} bytes)")
+
+
+def test_apply_multiple_comparison_correction():
+    # Hand-verified BH example: p = [0.01, 0.02, 0.03], m=3.
+    # q(i) = p(i)*m/i -> [0.03, 0.03, 0.03]; cumulative min leaves all three
+    # at 0.03, all still significant at alpha=0.05.
+    fake_analyses = [
+        {"hypothesis_id": "A", "statistical_result": {"p_value": 0.01}},
+        {"hypothesis_id": "B", "statistical_result": {"p_value": 0.02}},
+        {"hypothesis_id": "C", "statistical_result": {"p_value": 0.03}},
+        {"hypothesis_id": "D", "statistical_result": {"p_value": None}},  # untouched
+    ]
+    corrected = validator.apply_multiple_comparison_correction(fake_analyses, alpha=0.05)
+    for a in corrected[:3]:
+        adj = a["statistical_result"]["p_value_adjusted"]
+        assert abs(adj - 0.03) < 1e-9, f"expected 0.03, got {adj}"
+        assert a["statistical_result"]["significant_adjusted"] is True
+    assert "p_value_adjusted" not in corrected[3]["statistical_result"]
+    print("PASS: apply_multiple_comparison_correction — BH adjusted p-values match hand-computed example")
+
+
 def test_save_report_writes_files():
     fake_analysis = [{
         "hypothesis_id": "H_TEST",
@@ -125,6 +177,8 @@ if __name__ == "__main__":
         test_validate_results_detects_negative_cost,
         test_validate_results_passes_clean_query,
         test_ttest_between_service_types,
+        test_generate_chart_writes_png,
+        test_apply_multiple_comparison_correction,
         test_save_report_writes_files,
     ]
     failures = 0
