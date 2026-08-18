@@ -5,6 +5,25 @@ This dashboard visualizes a real agent run's metadata. The data is produced by
 and writes three CSVs into `tableau/`. **No values are hand-entered — every figure
 comes from the JSON the agent wrote during its run.**
 
+## Updating an already-published dashboard
+
+If you've already published once (Steps 1–7 below), refreshing it with new
+data is two steps, not a rebuild:
+
+1. **Regenerate the CSVs** — `tableau/hypothesis_outcomes.csv`,
+   `correction_triggers.csv`, and `failure_mode_summary.csv` are overwritten
+   in place at the same file paths by `scripts/export_results.py`. If your
+   local Tableau workbook still points at those paths, right-click each data
+   source in Tableau → **Refresh** and the sheets update automatically —
+   nothing else to reconnect.
+2. **Re-publish** — **File → Save to Tableau Public As…**, keep the **exact
+   same workbook name** you used originally, and confirm the overwrite when
+   prompted. This updates the existing dashboard at its current URL — it does
+   **not** create a second, separate dashboard.
+
+If you no longer have the local workbook, use the full build steps below —
+same file paths, same sheet definitions, you'll land on the same result.
+
 ## 1. Generate the data
 
 ```bash
@@ -17,7 +36,7 @@ This writes:
 
 | File | Grain | Key columns |
 |---|---|---|
-| `tableau/hypothesis_outcomes.csv` | one row per hypothesis | `hypothesis_id`, `statement`, `outcome` (passed/aborted), `test_name`, `p_value`, `significant`, `retry_count`, `self_corrected` |
+| `tableau/hypothesis_outcomes.csv` | one row per hypothesis | `hypothesis_id`, `statement`, `outcome` (passed/aborted), `test_name`, `p_value`, `significant`, `p_value_adjusted`, `significant_adjusted` (Benjamini-Hochberg/FDR-corrected), `retry_count`, `self_corrected` |
 | `tableau/correction_triggers.csv` | one row per self-correction attempt | `hypothesis_id`, `attempt`, `failure_category`, `failure_mode` |
 | `tableau/failure_mode_summary.csv` | one row per failure mode | `failure_category`, `failure_mode`, `trigger_count` |
 

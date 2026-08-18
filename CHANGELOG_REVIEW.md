@@ -180,11 +180,55 @@ system as it now actually behaves, not as it behaved before this round.
 
 ### Pending (owner action)
 
-- **Tableau dashboard is stale.** It's still built from the pre-fix `ec1d5144`
-  CSVs (3/5 passed) and hasn't been re-published against the current 5-run,
-  25/25 state. Regenerating `tableau/*.csv` from a current run and
-  re-publishing per `docs/tableau_dashboard.md` is a straightforward follow-up.
 - **Design doc's 5-dataset evaluation protocol** (varying data-quality
   profiles, not just repeated runs on one dataset) remains unimplemented.
 - **Crash-recovery state serialization** (specified in `docs/agent_design.md`,
   never implemented) remains unimplemented.
+
+## Correction — the "5-run Sonnet 5 characterization" was actually Sonnet 4.6
+
+**What went wrong:** `config.py`'s `AGENT_MODEL` default was changed to
+`claude-sonnet-5` as part of Round 2, but the local `.env` file (created in
+Round 1, before any of this work) had `AGENT_MODEL=claude-sonnet-4-6` set
+explicitly. Environment variables take precedence over `os.getenv(key, default)`
+fallbacks, so every one of the 5 "post-fix" runs reported in Round 2 — and the
+diagnostic run `ec1d5144` before them — actually executed on `claude-sonnet-4-6`.
+This was caught only when regenerating the Tableau CSVs surfaced the recorded
+`model_version` field; it should have been checked when the original results
+were first reported.
+
+**What was and wasn't actually wrong:** the prompt fix, the FDR correction, and
+chart generation were genuinely validated — those results hold regardless of
+which Sonnet version ran them. What was wrong was specifically the claim that
+the validation happened on Sonnet 5. Framed differently, this is a **stronger**
+result than originally claimed: the abort bug was fixed by the prompt change
+alone, with no model upgrade needed.
+
+**Fix:** corrected `.env` to `AGENT_MODEL=claude-sonnet-5`; verified the
+resolved model with a standalone `load_dotenv()` check before spending any
+API calls; re-ran the agent 5 more times, this time verifying
+`model_version: "claude-sonnet-5"` in every run's metadata before reporting
+anything.
+
+### Genuine Sonnet 5 characterization (5 runs, verified)
+
+| Run | Passed | Aborted | Self-correction triggers | Window-function errors |
+|---|---|---|---|---|
+| `c93d384f` | 5/5 | 0 | 2 | 0 |
+| `7b7d8423` | 5/5 | 0 | 2 | 0 |
+| `bd48c2a9` | 5/5 | 0 | 4 | 0 |
+| `04cbf330` | 5/5 | 0 | 2 | 0 |
+| `c063b712` | 5/5 | 0 | 2 | 0 |
+| **Total** | **25/25** | **0** | **12** | **0** |
+
+All triggers `negative_cost`, all resolved on the first retry. The original
+5-run table (`1a561eec`, `af1481bd`, `d944159b`, `36ea8b07`, `dbdbd8d7`) is
+kept in the README, correctly relabeled as the Sonnet 4.6 / prompt-fix-only
+validation rather than deleted, since it's still an accurate result under its
+corrected label.
+
+### Tableau dashboard — regenerated and re-published
+
+`tableau/*.csv` regenerated from a genuine Sonnet 5 run (`c93d384f`); the
+Tableau Public dashboard re-published with the updated data. See the README's
+Interactive Dashboard section for the link and current status.

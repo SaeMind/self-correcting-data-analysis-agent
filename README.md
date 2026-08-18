@@ -66,9 +66,11 @@ Full end-to-end output (hypothesis generation through final report) requires a l
 
 ## Key Findings
 
-### Current system — 5-run characterization (Claude Sonnet 5)
+> **Correction (2026-08-18):** the first version of this section reported a "5-run Claude Sonnet 5 characterization," but every one of those 5 runs actually executed on `claude-sonnet-4-6` — a stale `AGENT_MODEL=claude-sonnet-4-6` entry in the local `.env` file overrode `config.py`'s new default (env vars take precedence over code defaults), and the recorded `model_version` field wasn't checked before reporting results. The `.env` override has been fixed, and the characterization below was re-run for real on Sonnet 5. The mislabeled run is kept below, correctly relabeled, since it's still a valid (if differently-attributed) result: it's what proved the prompt fix alone — no model upgrade required — eliminates the window-function abort bug.
 
-Because hypothesis generation, query planning, and self-correction all involve **live model calls, single-run numbers are not representative** — the agent was run 5 times end-to-end against the same 10,000-record dataset, and every run is reported below (no run was cherry-picked or discarded):
+### Prompt-fix validation — 5-run characterization (Claude Sonnet 4.6)
+
+The agent was run 5 times end-to-end against the same 10,000-record dataset on `claude-sonnet-4-6` with the corrected planner/corrector prompts (no model upgrade yet). Every run is reported below — none cherry-picked or discarded:
 
 | Run | Passed | Aborted | Self-correction triggers | Window-function errors |
 |---|---|---|---|---|
@@ -79,47 +81,62 @@ Because hypothesis generation, query planning, and self-correction all involve *
 | `dbdbd8d7` | 5 / 5 | 0 | 3 | 0 |
 | **Total** | **25 / 25 (100%)** | **0** | **15** | **0** |
 
-All 15 correction triggers across the 5 runs were `negative_cost` (a hypothesis's first-attempt SQL touched the `amount` column without filtering the synthetic dataset's injected negative-cost rows) — every one was resolved on the **first** retry. No run needed a second or third retry, and no run hit the `MIN_SUCCESSFUL_ANALYSES` abort path.
+All 15 correction triggers were `negative_cost`, every one resolved on the first retry.
+
+### Model-upgrade validation — 5-run characterization (Claude Sonnet 5, genuine)
+
+With `.env` fixed, the agent was run 5 more times, this time verified via each run's recorded `model_version: "claude-sonnet-5"`:
+
+| Run | Passed | Aborted | Self-correction triggers | Window-function errors |
+|---|---|---|---|---|
+| `c93d384f` | 5 / 5 | 0 | 2 | 0 |
+| `7b7d8423` | 5 / 5 | 0 | 2 | 0 |
+| `bd48c2a9` | 5 / 5 | 0 | 4 | 0 |
+| `04cbf330` | 5 / 5 | 0 | 2 | 0 |
+| `c063b712` | 5 / 5 | 0 | 2 | 0 |
+| **Total** | **25 / 25 (100%)** | **0** | **12** | **0** |
+
+Again all triggers were `negative_cost`, again every one resolved on the first retry — a slightly lower trigger count than the Sonnet 4.6 sample (12 vs. 15 across 25 hypotheses), consistent with but not strong evidence of a modest quality improvement; 25 hypotheses per model is too small a sample to claim more than that.
 
 ### What changed, and why
 
-A prior single run (`ec1d5144`, Claude Sonnet 4.6, kept below for the historical record) completed only 3/5 hypotheses: two were aborted after the model repeatedly emitted a SQLite-invalid `AVG(x) OVER (...)` window function it couldn't self-correct within the 3-retry budget. Root cause: the **first-attempt** query-planner prompt never told the model to avoid aggregates/window functions — only the *retry* prompt did, and even that phrasing didn't rule out an aggregate function used as a window function.
+A prior single run (`ec1d5144`, kept below for the historical record) completed only 3/5 hypotheses: two were aborted after the model repeatedly emitted a SQLite-invalid `AVG(x) OVER (...)` window function it couldn't self-correct within the 3-retry budget. Root cause: the **first-attempt** query-planner prompt never told the model to avoid aggregates/window functions — only the *retry* prompt did, and even that phrasing didn't rule out an aggregate function used as a window function.
 
-Two fixes, both reflected in the run table above:
-1. **Prompt fix** — both the planner and corrector system prompts now explicitly forbid `GROUP BY`, aggregate functions, and window functions (naming the exact `AVG(x) OVER (...)` anti-pattern), since the validator computes all statistics from raw rows itself.
+Two changes, validated separately above:
+1. **Prompt fix** — both the planner and corrector system prompts now explicitly forbid `GROUP BY`, aggregate functions, and window functions (naming the exact `AVG(x) OVER (...)` anti-pattern), since the validator computes all statistics from raw rows itself. **This alone was sufficient** — it fixed the bug on Sonnet 4.6, no model upgrade required.
 2. **Model upgrade** — `claude-sonnet-4-6` → `claude-sonnet-5` with adaptive thinking enabled (`thinking={"type": "adaptive"}`, `effort: "high"`), which required also fixing response parsing: Sonnet 5 can prepend a `thinking` content block before the text block, so `response.content[0].text` silently breaks (`AttributeError` on a `ThinkingBlock`) — fixed by extracting the first `type == "text"` block instead of assuming position 0.
 
-Across the 5-run sample, the window-function failure mode did not recur even once.
+Across both 5-run samples (10 runs, 50 hypotheses total), the window-function failure mode did not recur even once.
 
 ### Statistical rigor: multiple-comparisons correction
 
-Testing 5 hypotheses per run at an uncorrected α=0.05 each inflates the run-level false-positive rate (5 independent tests at α=0.05 give a ~23% chance of at least one false positive even if every null hypothesis is true). Every run now applies **Benjamini-Hochberg (FDR) correction** across its p-values. Real example from run `1a561eec`:
+Testing 5 hypotheses per run at an uncorrected α=0.05 each inflates the run-level false-positive rate (5 independent tests at α=0.05 give a ~23% chance of at least one false positive even if every null hypothesis is true). Every run now applies **Benjamini-Hochberg (FDR) correction** across its p-values. Real example from Sonnet 5 run `c93d384f`:
 
 | Hypothesis | Test | Raw p | FDR-adjusted p | Significant (raw → adjusted) |
 |---|---|---|---|---|
-| H1 | t-test | 0.9425 | 0.9425 | No → No |
-| H2 | chi-square | 0.7817 | 0.9425 | No → No |
-| H3 | chi-square | 0.2558 | 0.4263 | No → No |
-| H4 | ANOVA | ≈0 | ≈0 | **Yes → Yes** |
+| H1 | chi-square | 0.2558 | 0.4263 | No → No |
+| H2 | ANOVA | ≈0 | ≈0 | **Yes → Yes** |
+| H3 | t-test | 0.5429 | 0.6787 | No → No |
+| H4 | chi-square | 0.7817 | 0.7817 | No → No |
 | H5 | regression | 1.55e-25 | 3.88e-25 | **Yes → Yes** |
 
-The two genuine findings (service type is strongly associated with cost; age is a weak but real positive predictor of cost) survive correction; the three null results stay null, with H2 and H3 shifting further toward non-significance under the stricter FDR threshold — exactly the behavior a multiple-comparisons correction is supposed to produce.
+The two genuine findings (service type is strongly associated with cost; age is a weak but real positive predictor of cost) survive correction; the three null results stay null — exactly the behavior a multiple-comparisons correction is supposed to produce.
 
 ### Generated charts
 
-Each successful hypothesis now renders a PNG chart (bar-with-error-bars for t-test/ANOVA, grouped bar for chi-square, scatter-with-fit for regression, histogram for descriptive), embedded directly in the Markdown report. Two real examples from the 5-run sample:
+Each successful hypothesis now renders a PNG chart (bar-with-error-bars for t-test/ANOVA, grouped bar for chi-square, scatter-with-fit for regression, histogram for descriptive), embedded directly in the Markdown report. Two real examples (from the Sonnet 4.6 sample, run `1a561eec`):
 
 <img src="docs/assets/example_chart_regression.png" width="420" alt="Regression chart: age vs claim amount"> <img src="docs/assets/example_chart_anova.png" width="420" alt="ANOVA chart: service type vs claim amount">
 
 ### Historical record — before the Tier 1/2 fixes
 
-Kept for transparency, not deleted: the diagnostic run that motivated the fixes above, and the very first run that predates it.
+Kept for transparency, not deleted: the diagnostic run that motivated the fixes above, and the very first run that predates it. Both ran on Claude Sonnet 4.6 (the model in use at the time).
 
-**`ec1d5144` (Claude Sonnet 4.6, pre-fix):** 3/5 passed, 2 aborted. Self-correction triggered on all 5 hypotheses (13 attempts): `missing_column` ×4, `negative_cost` ×4, `misuse of window function AVG()` ×4, `aggregated_data_detected` ×1. The 3 passing queries were manually inspected and confirmed correct.
+**`ec1d5144` (pre-fix):** 3/5 passed, 2 aborted. Self-correction triggered on all 5 hypotheses (13 attempts): `missing_column` ×4, `negative_cost` ×4, `misuse of window function AVG()` ×4, `aggregated_data_detected` ×1. The 3 passing queries were manually inspected and confirmed correct.
 
 **`07d0f881` (earliest run):** 5/5 passed, self-correction resolved 4/5.
 
-The honest takeaway across all reported runs: the deterministic validator and bounded-retry fail-safe behaved correctly throughout — recovering when a fix was reachable, aborting cleanly when it wasn't — and the specific gap that caused `ec1d5144`'s aborts (window-function misuse) is now fixed and empirically absent across a 5-run sample.
+The honest takeaway across all reported runs: the deterministic validator and bounded-retry fail-safe behaved correctly throughout — recovering when a fix was reachable, aborting cleanly when it wasn't — and the specific gap that caused `ec1d5144`'s aborts (window-function misuse) is now fixed and empirically absent across 10 runs spanning both models.
 
 ## Interactive Dashboard (Tableau Public)
 
@@ -127,7 +144,7 @@ A Tableau Public dashboard visualizes the run metadata directly from the exporte
 
 **Dashboard link:** **[View on Tableau Public →](https://public.tableau.com/views/Self-CorrectingDataAnalysisAgent/Self-CorrectingDataAnalysis)** — build steps in [`docs/tableau_dashboard.md`](docs/tableau_dashboard.md).
 
-> Every figure in the dashboard comes from `outputs/analysis_<run_id>/run_metadata.json`; no values are hand-entered. **Note:** the published dashboard reflects the pre-fix diagnostic run `ec1d5144` (3/5 passed) described in the Historical Record below, not the current 5-run characterization (25/25 passed). Re-publishing with `tableau/*.csv` regenerated from a current run is a straightforward follow-up (see [`CHANGELOG_REVIEW.md`](CHANGELOG_REVIEW.md)).
+> Every figure in the dashboard comes from `outputs/analysis_<run_id>/run_metadata.json`; no values are hand-entered. **Status:** `tableau/*.csv` has been regenerated from genuine Sonnet 5 run `c93d384f` (5/5 passed, including the FDR-adjusted p-values/significance) and is ready to publish — but publishing itself requires the repo owner's Tableau Public account (no API for free-tier publishing), so the link above may still point at the pre-fix `ec1d5144` dashboard until republished. See [`docs/tableau_dashboard.md`](docs/tableau_dashboard.md) → "Updating an already-published dashboard" for the two-step refresh.
 
 ## Literature Review
 

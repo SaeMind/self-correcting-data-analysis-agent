@@ -1,6 +1,6 @@
-run_id,hypothesis_id,statement,outcome,test_name,statistic,p_value,significant,row_count,retry_count,self_corrected,warnings
-ec1d5144,H1,Members with a chronic condition (chronic_condition_flag=1) have significantly higher claim amounts than those without a chronic condition (chronic_condition_flag=0).,passed,t-test,0.07218414699354543,0.9424568345674187,False,9800,2,yes,zscore_gt_5.0_count:52
-ec1d5144,H3,The rate of 30-day readmission differs significantly across the 8 diagnosis code categories.,passed,chi-square,3.7085938691925535,0.812663013624811,False,9307,2,yes,
-ec1d5144,H5,Members with a chronic condition have a significantly higher 30-day readmission rate than those without a chronic condition.,passed,chi-square,1.2916101249387986,0.2557514370662404,False,10000,1,yes,
-ec1d5144,H2,,aborted,,,,,0,,,
-ec1d5144,H4,,aborted,,,,,0,,,
+run_id,hypothesis_id,statement,outcome,test_name,statistic,p_value,significant,p_value_adjusted,significant_adjusted,row_count,retry_count,self_corrected,warnings
+c93d384f,H1,Members with a chronic condition flag have significantly different 30-day readmission rates compared to those without a chronic condition.,passed,chi-square,1.2916101249387986,0.2557514370662404,False,0.42625239511040064,False,10000,0,no,
+c93d384f,H2,Average claim amount differs significantly across the different service types.,passed,anova,1476.8794551560877,0.0,True,0.0,True,9800,1,yes,zscore_gt_5.0_count:52
+c93d384f,H3,Patient age differs significantly between members who are readmitted within 30 days and those who are not.,passed,t-test,-0.6084943674970887,0.5429499880214155,False,0.6786874850267693,False,9900,0,no,
+c93d384f,H4,Diagnosis code category is significantly associated with 30-day readmission status.,passed,chi-square,3.983527235567021,0.7816727880028884,False,0.7816727880028884,False,9500,0,no,
+c93d384f,H5,Patient age is a significant predictor of claim amount.,passed,regression,11.53496314842486,1.5509122730532046e-25,True,3.8772806826330113e-25,True,9703,1,yes,zscore_gt_5.0_count:52

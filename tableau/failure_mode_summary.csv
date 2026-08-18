@@ -1,5 +1,2 @@
 run_id,failure_category,failure_mode,trigger_count
-ec1d5144,validation_failure,missing_column,4
-ec1d5144,validation_failure,negative_cost,4
-ec1d5144,execution_error,misuse of window function AVG(),4
-ec1d5144,validation_failure,aggregated_data_detected,1
+c93d384f,validation_failure,negative_cost,2

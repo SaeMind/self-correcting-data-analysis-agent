@@ -88,6 +88,7 @@ def export(run_dir: Path) -> dict:
         writer.writerow([
             "run_id", "hypothesis_id", "statement", "outcome",
             "test_name", "statistic", "p_value", "significant",
+            "p_value_adjusted", "significant_adjusted",
             "row_count", "retry_count", "self_corrected", "warnings",
         ])
         for a in analyses:
@@ -102,6 +103,8 @@ def export(run_dir: Path) -> dict:
                 stat.get("statistic", ""),
                 stat.get("p_value", ""),
                 stat.get("significant", ""),
+                stat.get("p_value_adjusted", ""),
+                stat.get("significant_adjusted", ""),
                 a.get("row_count", 0),
                 retry,
                 "yes" if retry and retry > 0 else "no",
@@ -110,7 +113,7 @@ def export(run_dir: Path) -> dict:
         for h_id in aborted:
             writer.writerow([
                 metadata.get("run_id", ""), h_id, "", "aborted",
-                "", "", "", "", 0, "", "", "",
+                "", "", "", "", "", "", 0, "", "", "",
             ])
 
     # 2. correction_triggers.csv
