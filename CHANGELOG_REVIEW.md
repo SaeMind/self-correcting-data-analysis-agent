@@ -73,3 +73,118 @@ overwriting the old numbers.
   the README:
   https://public.tableau.com/views/Self-CorrectingDataAnalysisAgent/Self-CorrectingDataAnalysis
   (canonical URL verified reachable, HTTP 200).
+
+## Round 2 — Tier 1 + Tier 2 review-driven improvements
+
+A full review of `src/agent.py`, `src/tools.py`, `src/validator.py`, `src/config.py`,
+`docs/agent_design.md`, and the actual run output surfaced five findings, all
+fixed or explicitly tracked as still-open in this round:
+
+1. **The design doc's own success criterion wasn't being met.** `docs/agent_design.md`
+   states "≥5 analyses with 0 unrecovered failures"; run `ec1d5144` got 3/5. Root
+   cause diagnosed and fixed below (see "Prompt fix").
+2. **`figures/` was created but never populated**, despite the design doc
+   describing PNG charts per analysis. Fixed below (see "Chart generation").
+   Crash-recovery state serialization (also specified, also missing) remains
+   unimplemented — added as a tracked limitation in the README.
+3. **No multiple-comparisons correction** across the 5 hypotheses tested per run
+   at an uncorrected α=0.05. Fixed below.
+4. **Single run reported as representative**, despite the design doc's own
+   Evaluation Protocol specifying repeated evaluation. Addressed by running the
+   fixed system 5 times and reporting every run (see "5-run characterization").
+   The design doc's specific protocol — 5 *datasets* of varying data-quality
+   profiles, not 5 runs of the same dataset — remains unimplemented and is
+   tracked as an open limitation.
+5. **Diagnosed root cause of the `ec1d5144` aborts:** the first-attempt query
+   planner prompt never forbade aggregate/window functions — only the retry
+   corrector prompt did, and even that phrasing didn't rule out
+   `AVG(x) OVER (...)`-style misuse. Fixed below.
+
+### Prompt fix
+
+Both `call_query_planner` and `call_error_corrector` in `src/agent.py` now
+explicitly forbid `GROUP BY`, aggregate functions, and window functions
+(naming the exact `AVG(x) OVER (...)` anti-pattern observed in `ec1d5144`),
+since `validator.py`'s statistical tests are computed from raw rows regardless
+of test type — SQL-side aggregation was never actually needed.
+
+### Benjamini-Hochberg (FDR) multiple-comparisons correction
+
+Added `validator.apply_multiple_comparison_correction()` — a from-scratch
+implementation of the standard BH procedure (no new dependency), applied once
+per run across all successful analyses' p-values, adding `p_value_adjusted`
+and `significant_adjusted` to each. Verified against a hand-computed example
+(p = [0.01, 0.02, 0.03] → all adjusted to 0.03) in the deterministic test
+suite, and cross-checked against real run output (see README's "Statistical
+rigor" section for the worked example from run `1a561eec`).
+
+### Model upgrade: claude-sonnet-4-6 → claude-sonnet-5
+
+`src/config.py`'s default `AGENT_MODEL` changed to `claude-sonnet-5`;
+`thinking={"type": "adaptive"}` and `output_config={"effort": "high"}` added
+to all three `messages.create` call sites; `MAX_TOKENS_HYPOTHESIS/QUERY/CORRECTION`
+raised (2000/1000/1000 → 8000/4000/4000) to leave headroom for thinking tokens,
+which count against `max_tokens`. This also required fixing response parsing:
+Sonnet 5 can prepend a `thinking` content block before the `text` block, so the
+existing `response.content[0].text` would raise `AttributeError` on a
+`ThinkingBlock` — replaced with `_extract_text()`, which scans for the first
+`type == "text"` block instead of assuming position 0.
+
+### Chart generation
+
+Added `tools.generate_chart()` (matplotlib, non-interactive `Agg` backend) —
+renders a PNG per successful hypothesis (bar+error-bars for t-test/ANOVA,
+grouped bar for chi-square, scatter+fit line for regression, histogram for
+descriptive), wired into `run_agent()`'s main loop right after validation
+passes, and embedded in the Markdown report. Wrapped in try/except so a
+plotting failure can never abort a run. Verified deterministically (a new
+test asserts a real PNG is written) and against real output — all 4 chart
+types were exercised across the 5-run live sample below, and visually
+inspected (bar charts render correct group structure, the regression scatter
+shows the real age/cost relationship, matching the synthetic dataset's known
+cost-generation logic in `data/generate_synthetic_data.py`).
+
+### 5-run characterization (post-fix)
+
+Ran `python -m src.agent --dataset data/claims_sample.csv` 5 times against the
+fully updated code. Real, unfiltered results — no run excluded:
+
+| Run | Passed | Aborted | Self-correction triggers | Window-function errors |
+|---|---|---|---|---|
+| `1a561eec` | 5/5 | 0 | 3 | 0 |
+| `af1481bd` | 5/5 | 0 | 3 | 0 |
+| `d944159b` | 5/5 | 0 | 3 | 0 |
+| `36ea8b07` | 5/5 | 0 | 3 | 0 |
+| `dbdbd8d7` | 5/5 | 0 | 3 | 0 |
+| **Total** | **25/25** | **0** | **15** | **0** |
+
+All 15 correction triggers were `negative_cost`, all resolved on the first
+retry. The window-function failure mode that caused `ec1d5144`'s aborts did
+not recur once across the sample (confirmed by grepping all 5 raw run logs
+for "window", zero matches, in addition to the structured `error_log` check).
+
+### Test suite
+
+`tests/test_agent.py` extended with `test_generate_chart_writes_png` and
+`test_apply_multiple_comparison_correction`. Full suite: **9/9 pass**
+(`python3 tests/test_agent.py`, no API key required).
+
+### Doc reconciliation
+
+Fixed stale `claude-sonnet-4-6` references in `docs/agent_design.md`,
+`docs/pseudocode.py`, and `docs/tool_definitions.json`. Added the raw-row-only
+SQL constraint and a new "Stage 5.5 — Multiple-Comparisons Correction" section
+to `docs/agent_design.md`, and updated `docs/workflow_diagram.mermaid` to
+include the same step and chart generation — so these documents describe the
+system as it now actually behaves, not as it behaved before this round.
+
+### Pending (owner action)
+
+- **Tableau dashboard is stale.** It's still built from the pre-fix `ec1d5144`
+  CSVs (3/5 passed) and hasn't been re-published against the current 5-run,
+  25/25 state. Regenerating `tableau/*.csv` from a current run and
+  re-publishing per `docs/tableau_dashboard.md` is a straightforward follow-up.
+- **Design doc's 5-dataset evaluation protocol** (varying data-quality
+  profiles, not just repeated runs on one dataset) remains unimplemented.
+- **Crash-recovery state serialization** (specified in `docs/agent_design.md`,
+  never implemented) remains unimplemented.

@@ -15,7 +15,7 @@ MIN_SUCCESS_COUNT = 3
 MAX_HYPOTHESES = 5
 QUERY_TIMEOUT_SEC = 30
 MAX_ROWS = 1_000_000
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-sonnet-5"
 PROHIBITED_SQL_KEYWORDS = ["DELETE", "DROP", "INSERT", "UPDATE", "TRUNCATE", "ALTER"]
 
 # ─────────────────────────────────────────────

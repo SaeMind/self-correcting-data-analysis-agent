@@ -17,6 +17,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import matplotlib
+
+matplotlib.use("Agg")  # non-interactive backend; safe for headless/server use
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from src import config
@@ -206,6 +211,91 @@ def execute_query(
         )
 
 
+def generate_chart(
+    hypothesis_id: str,
+    rows: list[dict],
+    test_type: str,
+    group_column: str | None,
+    value_column: str | None,
+    statistical_result: dict[str, Any] | None,
+    figures_dir: Path,
+) -> str | None:
+    """
+    Render a PNG chart summarizing one successful hypothesis's result.
+
+    Chart type is selected by test_type: grouped bar with SEM error bars for
+    t-test/anova, a grouped count bar for chi-square, a scatter plot with a
+    fitted line for regression, and a histogram for descriptive. A plotting
+    failure must never abort the agent run, so every exception is caught and
+    logged rather than raised.
+
+    Args:
+        hypothesis_id: Hypothesis identifier, used for the filename and title.
+        rows: The raw query result rows the statistical test was computed on.
+        test_type: One of "t-test", "anova", "chi-square", "regression", "descriptive".
+        group_column: Categorical column used for group comparison tests.
+        value_column: Numeric column being tested.
+        statistical_result: The dict returned by validator._run_statistical_test.
+        figures_dir: Directory to write the PNG into (must already exist).
+
+    Returns:
+        The chart's filename (relative to figures_dir), or None if no chart
+        could be built for this test_type/column combination or rendering failed.
+    """
+    try:
+        df = pd.DataFrame(rows)
+        fig, ax = plt.subplots(figsize=(6, 4))
+        p_value = (statistical_result or {}).get("p_value")
+        title_suffix = f" (p={p_value:.4g})" if isinstance(p_value, (int, float)) else ""
+
+        if test_type in ("t-test", "anova") and group_column and value_column:
+            numeric = pd.to_numeric(df[value_column], errors="coerce")
+            grouped = df.assign(_value=numeric).groupby(group_column)["_value"]
+            means, sems = grouped.mean(), grouped.sem()
+            ax.bar(means.index.astype(str), means.values, yerr=sems.values, capsize=4)
+            ax.set_xlabel(group_column)
+            ax.set_ylabel(value_column)
+        elif test_type == "chi-square" and group_column and value_column:
+            contingency = pd.crosstab(df[group_column], df[value_column])
+            contingency.plot(kind="bar", ax=ax)
+            ax.set_xlabel(group_column)
+            ax.set_ylabel("count")
+            ax.legend(title=value_column, fontsize="small")
+        elif test_type == "regression" and value_column:
+            predictor = (statistical_result or {}).get("direction") or group_column
+            if not predictor or predictor not in df.columns:
+                plt.close(fig)
+                return None
+            x = pd.to_numeric(df[predictor], errors="coerce")
+            y = pd.to_numeric(df[value_column], errors="coerce")
+            mask = x.notna() & y.notna()
+            ax.scatter(x[mask], y[mask], alpha=0.3, s=10)
+            if mask.sum() > 1:
+                slope, intercept = np.polyfit(x[mask], y[mask], 1)
+                x_line = np.linspace(x[mask].min(), x[mask].max(), 100)
+                ax.plot(x_line, slope * x_line + intercept, color="red", linewidth=1.5)
+            ax.set_xlabel(predictor)
+            ax.set_ylabel(value_column)
+        elif value_column and value_column in df.columns:
+            numeric = pd.to_numeric(df[value_column], errors="coerce").dropna()
+            ax.hist(numeric, bins=30)
+            ax.set_xlabel(value_column)
+            ax.set_ylabel("count")
+        else:
+            plt.close(fig)
+            return None
+
+        ax.set_title(f"{hypothesis_id}{title_suffix}")
+        fig.tight_layout()
+        filename = f"{hypothesis_id}_chart.png"
+        fig.savefig(figures_dir / filename, dpi=110)
+        plt.close(fig)
+        return filename
+    except Exception:
+        logger.warning("Chart generation failed for %s", hypothesis_id, exc_info=True)
+        return None
+
+
 def save_report(
     run_id: str,
     successful_analyses: list[dict],
@@ -245,14 +335,22 @@ def save_report(
         md_lines.append(f"- **Retries:** {analysis.get('retry_count', 0)}")
         stat = analysis.get("statistical_result") or {}
         if stat:
-            md_lines.append(
+            result_line = (
                 f"- **Statistical result:** {stat.get('test_name')}, "
                 f"statistic={stat.get('statistic')}, p={stat.get('p_value')}, "
                 f"significant={stat.get('significant')}"
             )
+            if "p_value_adjusted" in stat:
+                result_line += (
+                    f" (FDR-adjusted p={stat['p_value_adjusted']:.4f}, "
+                    f"significant_adjusted={stat.get('significant_adjusted')})"
+                )
+            md_lines.append(result_line)
         warnings = analysis.get("warnings") or []
         if warnings:
             md_lines.append(f"- **Caveats:** {'; '.join(warnings)}")
+        if analysis.get("figure_path"):
+            md_lines.append(f"![{analysis.get('hypothesis_id', '')} chart](figures/{analysis['figure_path']})")
         md_lines.append("")
 
     if aborted_hypotheses:
