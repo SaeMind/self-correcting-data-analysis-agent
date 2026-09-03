@@ -1,0 +1,3 @@
+model_version,total_hypotheses,passed,aborted,pass_rate,total_self_correction_triggers,window_function_errors
+claude-sonnet-4-6,25,25,0,1.0,15,0
+claude-sonnet-5,25,25,0,1.0,12,0

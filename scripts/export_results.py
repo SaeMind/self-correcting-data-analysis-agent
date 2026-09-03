@@ -158,11 +158,147 @@ def export(run_dir: Path) -> dict:
         "paths": [str(outcomes_path), str(triggers_path), str(summary_path)],
     }
 
+def export_model_comparison(run_ids_by_model: dict, output_dir: Path = TABLEAU_DIR) -> dict:
+    """
+    Aggregates multiple runs by model into comparison CSVs.
+    Guards against the .env model_version mislabeling bug: asserts each
+    run's recorded model_version matches the key it's grouped under.
+    """
+    all_outcomes = []
+    all_triggers_raw = []
+    summary_rows = []
+    fdr_example_rows = []
+
+    for expected_model, run_ids in run_ids_by_model.items():
+        model_hyp_count = 0
+        model_passed = 0
+        model_aborted = 0
+        model_triggers = 0
+        model_window_errors = 0
+
+        for run_id in run_ids:
+            run_dir = OUTPUTS_DIR / f"analysis_{run_id}"
+            metadata_path = run_dir / "run_metadata.json"
+            metadata = json.loads(metadata_path.read_text())
+
+            actual_model = metadata.get("model_version", "")
+            assert actual_model == expected_model, (
+                f"Model mismatch for run {run_id}: expected {expected_model}, "
+                f"got {actual_model}. Refusing to aggregate."
+            )
+
+            passed = metadata.get("analyses", [])
+            aborted = metadata.get("aborted_hypotheses", [])
+            model_hyp_count += len(passed) + len(aborted)
+            model_passed += len(passed)
+            model_aborted += len(aborted)
+
+            for h in passed:
+                sr = h.get("statistical_result", {})
+                all_outcomes.append({
+                    "model_version": actual_model,
+                    "run_id": run_id,
+                    "hypothesis_id": h.get("hypothesis_id", ""),
+                    "outcome": "passed",
+                    "test_name": sr.get("test_name", ""),
+                    "p_value": sr.get("p_value", ""),
+                    "p_value_adjusted": sr.get("p_value_adjusted", ""),
+                    "significant_adjusted": sr.get("significant_adjusted", ""),
+                    "retry_count": h.get("retry_count", 0),
+                })
+                if run_id == "c93d384f":
+                    fdr_example_rows.append({
+                        "hypothesis_id": h.get("hypothesis_id", ""),
+                        "test_name": sr.get("test_name", ""),
+                        "p_value_raw": sr.get("p_value", ""),
+                        "p_value_adjusted": sr.get("p_value_adjusted", ""),
+                        "significant_raw": sr.get("significant", ""),
+                        "significant_adjusted": sr.get("significant_adjusted", ""),
+                    })
+
+            for h_id in aborted:
+                all_outcomes.append({
+                    "model_version": actual_model,
+                    "run_id": run_id,
+                    "hypothesis_id": h_id if isinstance(h_id, str) else h_id.get("hypothesis_id", ""),
+                    "outcome": "aborted",
+                    "test_name": "",
+                    "p_value": "",
+                    "p_value_adjusted": "",
+                    "significant_adjusted": "",
+                    "retry_count": "",
+                })
+
+            for err in metadata.get("error_log", []):
+                model_triggers += 1
+                reason = err.get("reason", "")
+                if ":" in reason:
+                    category, mode = reason.split(":", 1)
+                else:
+                    category, mode = "unknown", reason
+                if "window" in mode.lower():
+                    model_window_errors += 1
+                all_triggers_raw.append({
+                    "model_version": actual_model,
+                    "failure_category": category,
+                    "failure_mode": mode,
+                })
+
+        summary_rows.append({
+            "model_version": expected_model,
+            "total_hypotheses": model_hyp_count,
+            "passed": model_passed,
+            "aborted": model_aborted,
+            "pass_rate": round(model_passed / model_hyp_count, 4) if model_hyp_count else 0,
+            "total_self_correction_triggers": model_triggers,
+            "window_function_errors": model_window_errors,
+        })
+
+    failure_agg = {}
+    for t in all_triggers_raw:
+        key = (t["model_version"], t["failure_category"], t["failure_mode"])
+        failure_agg[key] = failure_agg.get(key, 0) + 1
+    failure_summary = [
+        {"model_version": m, "failure_category": c, "failure_mode": mode, "trigger_count": n}
+        for (m, c, mode), n in failure_agg.items()
+    ]
+
+    output_dir.mkdir(exist_ok=True)
+    _write_csv(output_dir / "model_comparison_summary.csv", summary_rows)
+    _write_csv(output_dir / "hypothesis_outcomes_by_model.csv", all_outcomes)
+    _write_csv(output_dir / "failure_mode_by_model.csv", failure_summary)
+    _write_csv(output_dir / "fdr_correction_example.csv", fdr_example_rows)
+
+    return {"summary": summary_rows}
+
+
+def _write_csv(path: Path, rows: list) -> None:
+    if not rows:
+        return
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Export agent run metadata to Tableau CSVs.")
     parser.add_argument("--run-id", type=str, default=None, help="Run ID (default: latest).")
+    parser.add_argument("--model-comparison", action="store_true",
+                         help="Aggregate the 10-run Sonnet 4.6 vs Sonnet 5 comparison")
     args = parser.parse_args()
+
+    if args.model_comparison:
+        run_ids_by_model = {
+            "claude-sonnet-4-6": ["1a561eec", "af1481bd", "d944159b", "36ea8b07", "dbdbd8d7"],
+            "claude-sonnet-5": ["c93d384f", "7b7d8423", "bd48c2a9", "04cbf330", "c063b712"],
+        }
+        result = export_model_comparison(run_ids_by_model)
+        print("Model comparison exported:")
+        for row in result["summary"]:
+            print(f"  {row['model_version']}: {row['passed']}/{row['total_hypotheses']} passed, "
+                  f"{row['total_self_correction_triggers']} triggers, "
+                  f"{row['window_function_errors']} window-function errors")
+        return
 
     run_dir = find_run_dir(args.run_id)
     result = export(run_dir)

@@ -1,0 +1,6 @@
+hypothesis_id,test_name,p_value_raw,p_value_adjusted,significant_raw,significant_adjusted
+H1,chi-square,0.2557514370662404,0.42625239511040064,False,False
+H2,anova,0.0,0.0,True,True
+H3,t-test,0.5429499880214155,0.6786874850267693,False,False
+H4,chi-square,0.7816727880028884,0.7816727880028884,False,False
+H5,regression,1.5509122730532046e-25,3.8772806826330113e-25,True,True

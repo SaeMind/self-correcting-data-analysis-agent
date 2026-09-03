@@ -1,0 +1,3 @@
+model_version,failure_category,failure_mode,trigger_count
+claude-sonnet-4-6,validation_failure,negative_cost,15
+claude-sonnet-5,validation_failure,negative_cost,12
